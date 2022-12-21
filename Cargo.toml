@@ -6,6 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+num_cpus = "1.15.0"
 rusqlite = { version = "0.28.0", features = ["bundled"] }
 anyhow = "1.0.66"
 scraper = "0.13.0"

@@ -1,8 +1,10 @@
-use anyhow::Result as AnyhowResult;
-use reqwest;
+use anyhow::{anyhow, Result as AnyhowResult};
+use num_cpus;
+use reqwest::{self, Client};
 use rusqlite::{Connection, Result as RSqlResult};
 use scraper::{Html, Selector};
-use std::collections::{HashMap, HashSet};
+use std::{collections::{HashMap, HashSet}, sync::{Arc, Mutex}};
+use tokio::{self};
 
 const TARGET_URL: &str = "http://rwr.runningwithrifles.com/rwr_stats/view_players.php";
 const SELECTOR_MATCH: &str = "table > tbody > tr";
@@ -108,30 +110,16 @@ VALUES('{}',{},{},{},{},{},{},{},{},{},{},{},{},'{}')",
     conn.execute(&sql_text, ())
 }
 
-// ref: https://zhuanlan.zhihu.com/p/516033159
-#[tokio::main]
-async fn main() -> AnyhowResult<()> {
-    println!("Creating SQLite connection...");
-    let conn = Connection::open(DB_NAME)?;
-
-    println!("Dropping SQLite Table...");
-    conn.execute(&get_drop_table_sql(TABLE_NAME), ())?;
-
-    println!("Creating SQLite Table...");
-    conn.execute(&get_create_table_sql(TABLE_NAME), ())?;
-
-    println!("Target url: {}", TARGET_URL);
-
-    let client = reqwest::Client::new();
-
-    // End: 148900
-    // No data: 149000
-    // TODO: Debug
-    let mut current_start = 148800;
-
-    // let mut current_start = 0;
-
+async fn run_task(client: Arc<Client>, conn: Arc<Mutex<Connection>>, start: Arc<Mutex<i128>>) -> AnyhowResult<()> {
     loop {
+        // 先改值, 使得下一次数据正确
+        let current_start = {
+            let mut next_start = start.lock().unwrap();
+            let start = *next_start;
+            *next_start += PAGE_SIZE as i128;
+            start
+        };
+
         let resp = client
             .get(TARGET_URL)
             .query(&[
@@ -208,7 +196,8 @@ async fn main() -> AnyhowResult<()> {
                                         .split("|")
                                         .map(|s| s.to_string())
                                         .collect::<Vec<String>>();
-                                    let times_str_iter = times_str_split_collect.iter().rev();
+                                    let times_str_iter =
+                                        times_str_split_collect.iter().rev();
 
                                     let mut times_by_minute = 0;
 
@@ -277,6 +266,7 @@ async fn main() -> AnyhowResult<()> {
                 println!("Player Parse:");
                 println!("{:?}", player);
 
+                let conn = &*conn.lock().unwrap();
                 insert_player_data(&conn, player)?;
             }
 
@@ -291,24 +281,57 @@ async fn main() -> AnyhowResult<()> {
         if data_size < PAGE_SIZE.into() {
             println!("=====Parsing End=====");
             if data_size != -1 {
-                println!("=====Total data: {}=====", current_start + data_size);
+                println!("=====Total data: {}=====", current_start - (PAGE_SIZE as i128));
             } else {
-                println!("=====Total data: {}=====", current_start);
+                println!("=====Total data: {}=====", current_start - (PAGE_SIZE as i128) + data_size);
             }
-            break;
+            return Ok(());
         }
+    }
+}
 
-        current_start = current_start + PAGE_SIZE as i128;
 
-        // TODO: Debug only
-        // break;
+#[tokio::main]
+async fn main() -> AnyhowResult<()> {
+    println!("Creating SQLite connection...");
+    let origin_conn = Connection::open(DB_NAME)?;
+
+
+    println!("Dropping SQLite Table...");
+    origin_conn.execute(&get_drop_table_sql(TABLE_NAME), ())?;
+
+    println!("Creating SQLite Table...");
+    origin_conn.execute(&get_create_table_sql(TABLE_NAME), ())?;
+
+    println!("Target url: {}", TARGET_URL);
+
+    let conn = Arc::new(Mutex::new(origin_conn));
+
+    let client = Arc::new(Client::new());
+
+    // End: 148900
+    // No data: 149000
+    // TODO: Debug
+    // let current_start = Arc::new(Mutex::new(146000));
+    let current_start = Arc::new(Mutex::new(0));
+
+    let mut handle_vec = Vec::with_capacity(num_cpus::get_physical());
+
+    for n in 1..num_cpus::get_physical() {
+        let current_start = Arc::clone(&current_start);
+
+        let conn = Arc::clone(&conn);
+
+        let client = Arc::clone(&client);
+
+        handle_vec.push(tokio::spawn(async move {
+            run_task(client, conn, current_start).await.unwrap();
+        }));
+    }
+
+    for task in handle_vec {
+        task.await.unwrap();
     }
 
     Ok(())
 }
-
-// INSERT INTO rwr (username, kills, deaths, score,time_played,longest_kill_streak,targets_destroyed,soldiers_healed,teamkills,distance_moved,shots_fired,throwables_thrown,rank_progression,rank_name)
-// VALUES('TEST222',0,0,0, 0,0,0,0,0,0.0,0,0,0,'Private')
-
-// INSERT INTO rwr (username, kills, deaths, score,time_played,longest_kill_streak,targets_destroyed,soldiers_healed,teamkills,distance_moved,shots_fired,throwables_thrown,rank_progression,rank_name)
-// VALUES('TEST111',220720,20853,199867, 103128,625,5056,3089,4571,2134.3,2051204,19434,3005651,'General of the Army')

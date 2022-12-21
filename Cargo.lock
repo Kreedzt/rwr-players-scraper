@@ -1008,6 +1008,7 @@ name = "rwr-players-scraper-rust"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "num_cpus",
  "reqwest",
  "rusqlite",
  "scraper",
