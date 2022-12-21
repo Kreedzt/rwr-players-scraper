@@ -1004,7 +1004,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "rwr-players-scraper-rust-demo"
+name = "rwr-players-scraper-rust"
 version = "0.1.0"
 dependencies = [
  "anyhow",
