@@ -1,4 +1,4 @@
-use anyhow::{Result as AnyhowResult};
+use anyhow::Result as AnyhowResult;
 use num_cpus;
 use reqwest::{self, Client};
 use rusqlite::{Connection, Result as RSqlResult};
@@ -110,7 +110,12 @@ VALUES('{}',{},{},{},{},{},{},{},{},{},{},{},{},'{}')",
     conn.execute(&sql_text, ())
 }
 
-async fn run_task(client: Arc<Client>, conn: Arc<Mutex<Connection>>, start: Arc<Mutex<i128>>) -> AnyhowResult<()> {
+async fn run_task(
+    client: Arc<Client>,
+    conn: Arc<Mutex<Connection>>,
+    start: Arc<Mutex<i128>>,
+    thread_n: usize,
+) -> AnyhowResult<()> {
     loop {
         // 先改值, 使得下一次数据正确
         let current_start = {
@@ -120,7 +125,10 @@ async fn run_task(client: Arc<Client>, conn: Arc<Mutex<Connection>>, start: Arc<
             start
         };
 
-        println!(">>>>>Sending Request... start:{}>>>>>", current_start);
+        println!(
+            ">>>>> {}:Sending Request... start:{} >>>>>",
+            thread_n, current_start
+        );
         let resp = client
             .get(TARGET_URL)
             .query(&[
@@ -144,8 +152,8 @@ async fn run_task(client: Arc<Client>, conn: Arc<Mutex<Connection>>, start: Arc<
 
         for element in fragment.select(&selector) {
             println!(
-                ">>>>>Start Parsing... start:{}, data(before):{}>>>>>",
-                current_start, data_size
+                ">>>>> {}:Start Parsing... start:{}, data(before):{} >>>>>",
+                thread_n, current_start, data_size
             );
             // println!("tr element: {:?}", element.value());
 
@@ -199,8 +207,7 @@ async fn run_task(client: Arc<Client>, conn: Arc<Mutex<Connection>>, start: Arc<
                                         .split("|")
                                         .map(|s| s.to_string())
                                         .collect::<Vec<String>>();
-                                    let times_str_iter =
-                                        times_str_split_collect.iter().rev();
+                                    let times_str_iter = times_str_split_collect.iter().rev();
 
                                     let mut times_by_minute = 0;
 
@@ -277,28 +284,34 @@ async fn run_task(client: Arc<Client>, conn: Arc<Mutex<Connection>>, start: Arc<
         }
 
         println!(
-            ">>>>>Parsing completed, start:{}, data(after):{}>>>>>",
-            current_start, data_size
+            ">>>>> {}:Parsing completed, start:{}, data(after):{} >>>>>",
+            thread_n, current_start, data_size
         );
 
         if data_size < PAGE_SIZE {
-            println!("=====Parsing End=====");
+            println!("===== {}:Parsing End===== ", thread_n);
             if data_size != -1 {
-                println!("=====No More data: end current + size: {}=====", current_start - PAGE_SIZE + data_size);
+                println!(
+                    "===== {}:No More data: end current + size: {} =====",
+                    thread_n,
+                    current_start - PAGE_SIZE + data_size
+                );
             } else {
-                println!("=====No More data: end current: {}=====", current_start - PAGE_SIZE);
+                println!(
+                    "===== {}:No More data: end current: {} =====",
+                    thread_n,
+                    current_start - PAGE_SIZE
+                );
             }
             return Ok(());
         }
     }
 }
 
-
 #[tokio::main]
 async fn main() -> AnyhowResult<()> {
     println!("Creating SQLite connection...");
     let origin_conn = Connection::open(DB_NAME)?;
-
 
     println!("Dropping SQLite Table...");
     origin_conn.execute(&get_drop_table_sql(TABLE_NAME), ())?;
@@ -316,12 +329,13 @@ async fn main() -> AnyhowResult<()> {
     // No data: 149000
     // TODO: Debug
     // let current_start = Arc::new(Mutex::new(146000));
+    // DLC
+    // let current_start = Arc::new(Mutex::new(36000));
     let current_start = Arc::new(Mutex::new(0));
-    // let current_start = Arc::new(Mutex::new(0));
 
     let mut handle_vec = Vec::with_capacity(num_cpus::get_physical());
 
-    for n in 1..num_cpus::get_physical() {
+    for n in 0..num_cpus::get_physical() {
         let current_start = Arc::clone(&current_start);
 
         let conn = Arc::clone(&conn);
@@ -329,13 +343,17 @@ async fn main() -> AnyhowResult<()> {
         let client = Arc::clone(&client);
 
         handle_vec.push(tokio::spawn(async move {
-            run_task(client, conn, current_start).await.unwrap();
+            println!("##### Thread: {} start #####", n);
+            run_task(client, conn, current_start, n).await.unwrap();
+            println!("##### Thread: {} end #####", n);
         }));
     }
 
     for task in handle_vec {
         task.await.unwrap();
     }
+
+    println!("All Threads({}) Completed", num_cpus::get_physical());
 
     Ok(())
 }
