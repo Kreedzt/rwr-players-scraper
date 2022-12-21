@@ -1,10 +1,10 @@
-use anyhow::{anyhow, Result as AnyhowResult};
+use anyhow::{Result as AnyhowResult};
 use num_cpus;
 use reqwest::{self, Client};
 use rusqlite::{Connection, Result as RSqlResult};
 use scraper::{Html, Selector};
-use std::{collections::{HashMap, HashSet}, sync::{Arc, Mutex}};
-use tokio::{self};
+use std::sync::{Arc, Mutex};
+use tokio;
 
 const TARGET_URL: &str = "http://rwr.runningwithrifles.com/rwr_stats/view_players.php";
 const SELECTOR_MATCH: &str = "table > tbody > tr";
