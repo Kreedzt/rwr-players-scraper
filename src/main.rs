@@ -8,7 +8,7 @@ use tokio::{self};
 
 const TARGET_URL: &str = "http://rwr.runningwithrifles.com/rwr_stats/view_players.php";
 const SELECTOR_MATCH: &str = "table > tbody > tr";
-const PAGE_SIZE: u8 = 100;
+const PAGE_SIZE: i128 = 100;
 const DB_NAME: &str = "rwr_players.db";
 const TABLE_NAME: &str = "rwr_players";
 
@@ -120,10 +120,13 @@ async fn run_task(client: Arc<Client>, conn: Arc<Mutex<Connection>>, start: Arc<
             start
         };
 
+        println!(">>>>>Sending Request... start:{}>>>>>", current_start);
         let resp = client
             .get(TARGET_URL)
             .query(&[
-                ("db", "invasion"),
+                // invasion / pacific
+                // ("db", "invasion"),
+                ("db", "pacific"),
                 ("sort", "rank_progression"),
                 ("start", &current_start.to_string()),
             ])
@@ -278,12 +281,12 @@ async fn run_task(client: Arc<Client>, conn: Arc<Mutex<Connection>>, start: Arc<
             current_start, data_size
         );
 
-        if data_size < PAGE_SIZE.into() {
+        if data_size < PAGE_SIZE {
             println!("=====Parsing End=====");
             if data_size != -1 {
-                println!("=====Total data: {}=====", current_start - (PAGE_SIZE as i128));
+                println!("=====No More data: end current + size: {}=====", current_start - PAGE_SIZE + data_size);
             } else {
-                println!("=====Total data: {}=====", current_start - (PAGE_SIZE as i128) + data_size);
+                println!("=====No More data: end current: {}=====", current_start - PAGE_SIZE);
             }
             return Ok(());
         }
@@ -314,6 +317,7 @@ async fn main() -> AnyhowResult<()> {
     // TODO: Debug
     // let current_start = Arc::new(Mutex::new(146000));
     let current_start = Arc::new(Mutex::new(0));
+    // let current_start = Arc::new(Mutex::new(0));
 
     let mut handle_vec = Vec::with_capacity(num_cpus::get_physical());
 
