@@ -1,6 +1,17 @@
 # RWR 用户数据爬取
 
+![license](https://badgen.net/github/license/Kreedzt/rwr-players-scraper)
+![latest release](https://badgen.net/github/release/Kreedzt/rwr-players-scraper)
+
 > 该项目从 http://rwr.runningwithrifles.com/rwr_stats/view_players.php 官方链接爬取所有数据, 请勿滥用
+
+## 使用
+
+使用时需要定义环境变量, 运行前在同目录放置 `.env` 文件, 会合并环境变量(参考 `.env.example` 文件)
+
+环境变量参数:
+- DB: rwr 网站数据库名称, 通常为 `pacific` 或 `invasion`
+- START: 起始数据偏移, 默认为 0
 
 ## 开发
 

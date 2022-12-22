@@ -5,6 +5,8 @@ use rusqlite::{Connection, Result as RSqlResult};
 use scraper::{Html, Selector};
 use std::sync::{Arc, Mutex};
 use tokio;
+use dotenv::dotenv;
+use std::env;
 
 const TARGET_URL: &str = "http://rwr.runningwithrifles.com/rwr_stats/view_players.php";
 const SELECTOR_MATCH: &str = "table > tbody > tr";
@@ -115,6 +117,7 @@ async fn run_task(
     conn: Arc<Mutex<Connection>>,
     start: Arc<Mutex<i128>>,
     thread_n: usize,
+    db: &str,
 ) -> AnyhowResult<()> {
     loop {
         // 先改值, 使得下一次数据正确
@@ -134,7 +137,7 @@ async fn run_task(
             .query(&[
                 // invasion / pacific
                 // ("db", "invasion"),
-                ("db", "pacific"),
+                ("db", db),
                 ("sort", "rank_progression"),
                 ("start", &current_start.to_string()),
             ])
@@ -310,6 +313,15 @@ async fn run_task(
 
 #[tokio::main]
 async fn main() -> AnyhowResult<()> {
+    dotenv().ok();
+
+    // Parse ENV
+    let start = env::var("START").unwrap_or("0".to_string()).parse::<i128>()?;
+    let db = env::var("DB")?;
+
+    println!("env: DB={}, start={}", db, start);
+
+    // Clear SQLite Table
     println!("Creating SQLite connection...");
     let origin_conn = Connection::open(DB_NAME)?;
 
@@ -319,21 +331,26 @@ async fn main() -> AnyhowResult<()> {
     println!("Creating SQLite Table...");
     origin_conn.execute(&get_create_table_sql(TABLE_NAME), ())?;
 
+    // Shared state
     println!("Target url: {}", TARGET_URL);
 
     let conn = Arc::new(Mutex::new(origin_conn));
 
     let client = Arc::new(Client::new());
 
+    let db_name = Arc::new(db);
+
+    // Debug data param
     // End: 148900
     // No data: 149000
     // TODO: Debug
     // let current_start = Arc::new(Mutex::new(146000));
     // DLC
     // let current_start = Arc::new(Mutex::new(36000));
-    let current_start = Arc::new(Mutex::new(0));
+    let current_start = Arc::new(Mutex::new(start));
 
     let mut handle_vec = Vec::with_capacity(num_cpus::get_physical());
+
 
     for n in 0..num_cpus::get_physical() {
         let current_start = Arc::clone(&current_start);
@@ -342,9 +359,11 @@ async fn main() -> AnyhowResult<()> {
 
         let client = Arc::clone(&client);
 
+        let db_name = Arc::clone(&db_name);
+
         handle_vec.push(tokio::spawn(async move {
             println!("##### Thread: {} start #####", n);
-            run_task(client, conn, current_start, n).await.unwrap();
+            run_task(client, conn, current_start, n, &db_name).await.unwrap();
             println!("##### Thread: {} end #####", n);
         }));
     }
