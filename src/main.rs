@@ -3,7 +3,10 @@ use num_cpus;
 use reqwest::{self, Client};
 use rusqlite::{Connection, Result as RSqlResult};
 use scraper::{Html, Selector};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::process;
+use std::time::Duration;
 use tokio;
 use dotenv::dotenv;
 use std::env;
@@ -118,6 +121,8 @@ async fn run_task(
     start: Arc<Mutex<i128>>,
     thread_n: usize,
     db: &str,
+    delay: u64,
+    timeout: u64
 ) -> AnyhowResult<()> {
     loop {
         // 先改值, 使得下一次数据正确
@@ -127,6 +132,11 @@ async fn run_task(
             *next_start += PAGE_SIZE as i128;
             start
         };
+
+        if delay > 0 {
+            println!(">>>>> {}:Delay {} s >>>>>", thread_n, delay);
+            tokio::time::sleep(Duration::from_secs(delay)).await;
+        }
 
         println!(
             ">>>>> {}:Sending Request... start:{} >>>>>",
@@ -141,6 +151,14 @@ async fn run_task(
                 ("sort", "rank_progression"),
                 ("start", &current_start.to_string()),
             ])
+            // .header("Host", "rwr.runningwithrifles.com")
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/109.0")
+            // .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+            // .header("Accept-Language", "zh,zh-CN;q=0.8,en-US;q=0.5,en;q=0.3")
+            // .header("Accept-Encoding", "gzip, deflate")
+            // .header("Connection", "keep-alive")
+            // .header("Upgrade-Insecure-Requests", "1")
+            .timeout(Duration::from_secs(timeout))
             .send()
             .await?
             .text()
@@ -318,8 +336,10 @@ async fn main() -> AnyhowResult<()> {
     // Parse ENV
     let start = env::var("START").unwrap_or("0".to_string()).parse::<i128>()?;
     let db = env::var("DB")?;
+    let delay = env::var("DELAY").unwrap_or("1".to_string()).parse::<u64>()?;
+    let timeout = env::var("TIMEOUT").unwrap_or("5".to_string()).parse::<u64>()?;
 
-    println!("env: DB={}, start={}", db, start);
+    println!("ENV: DB={}, start={}, DELAY={}, TIMEOUT={}", db, start, delay, timeout);
 
     // Clear SQLite Table
     println!("Creating SQLite connection...");
@@ -339,6 +359,10 @@ async fn main() -> AnyhowResult<()> {
     let client = Arc::new(Client::new());
 
     let db_name = Arc::new(db);
+
+    let delay = Arc::new(delay);
+
+    let timeout = Arc::new(timeout);
 
     // Debug data param
     // End: 148900
@@ -361,10 +385,24 @@ async fn main() -> AnyhowResult<()> {
 
         let db_name = Arc::clone(&db_name);
 
+        let delay = Arc::clone(&delay);
+
+        let timeout = Arc::clone(&timeout);
+
         handle_vec.push(tokio::spawn(async move {
             println!("##### Thread: {} start #####", n);
-            run_task(client, conn, current_start, n, &db_name).await.unwrap();
-            println!("##### Thread: {} end #####", n);
+            match run_task(client, conn, current_start, n, &db_name, *delay, *timeout).await {
+                Ok(()) => {
+                    println!("##### Thread: {} end #####", n);
+                    Ok(())
+                },
+                Err(e) => {
+                    println!("##### Thread: {} err #####", n);
+                    println!("{}", e.to_string());
+                    process::exit(1);
+                    Err(e)
+                }
+            }
         }));
     }
 
