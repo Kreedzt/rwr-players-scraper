@@ -3,13 +3,14 @@ use num_cpus;
 use reqwest::{self, Client};
 use rusqlite::{Connection, Result as RSqlResult};
 use scraper::{Html, Selector};
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::process;
 use std::time::Duration;
 use tokio;
 use dotenv::dotenv;
 use std::env;
+use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
+use reqwest_retry::{RetryTransientMiddleware, policies::ExponentialBackoff};
 
 const TARGET_URL: &str = "http://rwr.runningwithrifles.com/rwr_stats/view_players.php";
 const SELECTOR_MATCH: &str = "table > tbody > tr";
@@ -116,7 +117,7 @@ VALUES('{}',{},{},{},{},{},{},{},{},{},{},{},{},'{}')",
 }
 
 async fn run_task(
-    client: Arc<Client>,
+    client: Arc<ClientWithMiddleware>,
     conn: Arc<Mutex<Connection>>,
     start: Arc<Mutex<i128>>,
     thread_n: usize,
@@ -338,8 +339,9 @@ async fn main() -> AnyhowResult<()> {
     let db = env::var("DB")?;
     let delay = env::var("DELAY").unwrap_or("1".to_string()).parse::<u64>()?;
     let timeout = env::var("TIMEOUT").unwrap_or("5".to_string()).parse::<u64>()?;
+    let retry = env::var("RETRY").unwrap_or("3".to_string()).parse::<u32>()?;
 
-    println!("ENV: DB={}, start={}, DELAY={}, TIMEOUT={}", db, start, delay, timeout);
+    println!("ENV: DB={}, start={}, DELAY={}, TIMEOUT={}, RETRY={}", db, start, delay, timeout, retry);
 
     // Clear SQLite Table
     println!("Creating SQLite connection...");
@@ -356,7 +358,13 @@ async fn main() -> AnyhowResult<()> {
 
     let conn = Arc::new(Mutex::new(origin_conn));
 
-    let client = Arc::new(Client::new());
+    // reqwest client
+    let retry_policy = ExponentialBackoff::builder().build_with_max_retries(retry);
+    let client = ClientBuilder::new(Client::new())
+        .with(RetryTransientMiddleware::new_with_policy(retry_policy))
+        .build();
+    
+    let client = Arc::new(client);
 
     let db_name = Arc::new(db);
 
