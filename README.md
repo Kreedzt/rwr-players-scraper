@@ -1,49 +1,51 @@
-# RWR 用户数据爬取
+# RWR User Data Scraper
 
 ![license](https://badgen.net/github/license/Kreedzt/rwr-players-scraper)
 ![latest release](https://badgen.net/github/release/Kreedzt/rwr-players-scraper)
 
-> 该项目从 http://rwr.runningwithrifles.com/rwr_stats/view_players.php 官方链接爬取所有数据, 请勿滥用
+> This project crawls all data from http://rwr.runningwithrifles.com/rwr_stats/view_players.php official link, do not abuse it!
 
-## 使用
+English | [简体中文](README_zhCN.md)
 
-使用时需要定义环境变量, 运行前在同目录放置 `.env` 文件, 会合并环境变量(参考 `.env.example` 文件)
+## Usage
 
-环境变量参数:
-- DB: **必须**, rwr 网站数据库名称, 通常为 `pacific` 或 `invasion`
-- START: 可选, 起始数据偏移, 默认为 0
-- DELAY: 可选, 单位: 秒, 每次请求前等待时间, 默认为 1
-- TIMEOUT: 可选, 单位: 秒, 每次请求超时时间, 默认为 5
-- RETRY: 可选, 每次请求失败重试次数, 默认为 3
+You need to define the environment variables, and place the `.env` file in the same directory before running, it will merge the environment variables (refer to the `.env.example` file).
 
-每次执行时会 **清空数据表**
+Environment variable parameter:
+- DB: **required**, rwr's database, usually `pacific` or `invasion`.
+- START: optional, starting data offset, default is 0.
+- DELAY: optional, unit: seconds, wait time before each request, default is 1.
+- TIMEOUT: optional, unit: seconds, wait time before each request, default is 5.
+- RETRY: optional, the number of retries per failed request, default is 3.
 
-执行成功后, 会在同目录下以 SQLite3 支持的格式生成 `rwr_players.db` 文件, 可用第三方数据库可视化工具查询数据, 存储的数据表名为 `rwr_players`
+**Empty data table** after each execution
 
-## 开发
+After successful execution, the `rwr_players.db` file will be generated in the same directory in the format supported by SQLite3, which can be used by third-party database visualization tools to query the data, and the stored data table is named `rwr_players`.
 
-该项目采用 Rust 语言编写，需要 [Rust](https://www.rust-lang.org/) 开发环境
+## Development
 
-该项目采用多线程轮训获取所有数据, 数据量较大, 所需时间较长, 可在 `src/main.rs` 中调整 `current_start` 起始数据偏移来方便测试
+This project is written in the Rust language and requires the [Rust](https://www.rust-lang.org/) development environment
 
-在项目根目录下执行如下命令即可编译
+Execute the following command in the project root directory to compile it:
 ``` sh
 cargo run
 ```
 
-会在同目录下以 SQLite3 支持的格式生成 `rwr_players.db` 文件, 可用第三方数据库可视化工具查询数据
+> This project uses multi-threaded rounds to get all the data, the amount of data is large, the time required is long, please be patient when executing
 
-## 构建
+After execution, the `rwr_players.db` file will be generated in the same directory in the format supported by SQLite3, which can be used to query the data with third-party database visualization tools.
 
-该项目采用 Rust 语言编写，需要 [Rust](https://www.rust-lang.org/) 开发环境
+## Build
 
-编译需执行以下命令：
+This project is written in the Rust language and requires the [Rust](https://www.rust-lang.org/) development environment
+
+Execute the following command in the project root directory to compile it:
 ```bash
 cargo build --release
 ```
 
-编译后在根目录的 `target/release` 内生成二进制文件（exe）
+After compilation, a binary file (exe) is generated in `target/release` in the root directory.
 
-## 协议
+## LICENSE
 
 - [GPLv3](https://opensource.org/licenses/GPL-3.0)
